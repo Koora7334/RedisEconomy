@@ -8,6 +8,7 @@ import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.command.CommandSender;
 import org.jetbrains.annotations.Nullable;
 import ru.xezard.configurations.Configuration;
+import ru.xezard.configurations.ConfigurationComments;
 import ru.xezard.configurations.ConfigurationField;
 
 import java.lang.reflect.Field;
@@ -48,8 +49,9 @@ public final class Langs extends Configuration {
     public String balanceTopFormat = "<aqua>%pos% - %player% %balance%</aqua>";
     @ConfigurationField("paySelf")
     public String paySelf = "<red>You cannot pay yourself!</red>";
+    @ConfigurationComments("Use %tax_percentage% for tax percentage and %tax_applied% for tax applied to the transaction.")
     @ConfigurationField("paySuccess")
-    public String paySuccess = "<green>You paid %player% %amount% with %tax_percentage% (%tax_applied%) of transaction fee!</green>";
+    public String paySuccess = "<green>You paid %player% %amount%</green>";
     @ConfigurationField("payFail")
     public String payFail = "<red>Payment failed!</red>";
     @ConfigurationField("payReceived")
@@ -64,8 +66,6 @@ public final class Langs extends Configuration {
     public String noTransactionFound = "<red>No transaction found for %player%!</red>";
     @ConfigurationField("incorrectDate")
     public String incorrectDate = "<red>Incorrect Date formatting !</red>";
-    @ConfigurationField("purgeTransactionsSuccess")
-    public String purgeTransactionsSuccess = "<green>Purged %size% transactions from %player% before %date%</green>";
     @ConfigurationField("transactionsStart")
     public String transactionsStart = "<dark_aqua>Transactions of player %player% from %after% to %before%!</dark_aqua>";
     @ConfigurationField("transactionsEnd")
@@ -92,6 +92,8 @@ public final class Langs extends Configuration {
     public UnitSymbols unitSymbols = new UnitSymbols("k", "m", "b", "t", "q");
     @ConfigurationField("backupRestoreFinished")
     public String backupRestoreFinished = "<green>Backup/restore file %file% finished!</green>";
+    @ConfigurationField("invalidPath")
+    public String invalidPath = "<red>Invalid path!</red>";
 
     public Langs(String pathToFile) {
         super(pathToFile);

@@ -3,6 +3,7 @@ package dev.unnm3d.rediseconomy.currency;
 import dev.unnm3d.rediseconomy.RedisEconomyPlugin;
 import dev.unnm3d.rediseconomy.api.RedisEconomyAPI;
 import dev.unnm3d.rediseconomy.config.ConfigManager;
+import dev.unnm3d.rediseconomy.config.struct.CurrencySettings;
 import dev.unnm3d.rediseconomy.redis.RedisKeys;
 import dev.unnm3d.rediseconomy.redis.RedisManager;
 import dev.unnm3d.rediseconomy.transaction.EconomyExchange;
@@ -47,7 +48,7 @@ public class CurrenciesManager extends RedisEconomyAPI implements Listener {
         INSTANCE = this;
         this.completeMigration = new CompletableFuture<>();
         this.redisManager = redisManager;
-        this.exchange = new EconomyExchange(this);
+        this.exchange = new EconomyExchange(plugin);
         this.plugin = plugin;
         this.configManager = configManager;
         this.currencies = new HashMap<>();
@@ -61,14 +62,14 @@ public class CurrenciesManager extends RedisEconomyAPI implements Listener {
         configManager.getSettings().currencies.forEach(currencySettings -> {
             Currency currency;
             if (currencySettings.isBankEnabled()) {
-                currency = new CurrencyWithBanks(this, currencySettings.getCurrencyName(), currencySettings.getCurrencySingle(), currencySettings.getCurrencyPlural(), currencySettings.getDecimalFormat(), currencySettings.getLanguageTag(), currencySettings.getStartingBalance(), currencySettings.getPayTax());
+                currency = new CurrencyWithBanks(this, currencySettings);
             } else {
-                currency = new Currency(this, currencySettings.getCurrencyName(), currencySettings.getCurrencySingle(), currencySettings.getCurrencyPlural(), currencySettings.getDecimalFormat(), currencySettings.getLanguageTag(), currencySettings.getStartingBalance(), currencySettings.getPayTax());
+                currency = new Currency(this, currencySettings);
             }
             currencies.put(currencySettings.getCurrencyName(), currency);
         });
         if (currencies.get(configManager.getSettings().defaultCurrencyName) == null) {
-            currencies.put(configManager.getSettings().defaultCurrencyName, new Currency(this, configManager.getSettings().defaultCurrencyName, "€", "€", "#.##", "en-US", 0.0, 0.0));
+            currencies.put(configManager.getSettings().defaultCurrencyName, new Currency(this, new CurrencySettings(configManager.getSettings().defaultCurrencyName, "€", "€", "#.##", "en-US", 0.0, 0.0, true, false)));
         }
         registerPayMsgChannel();
         registerBlockAccountChannel();
@@ -78,6 +79,10 @@ public class CurrenciesManager extends RedisEconomyAPI implements Listener {
 
     public void loadDefaultCurrency(Plugin vaultPlugin) {
         Currency defaultCurrency = getDefaultCurrency();
+
+        for (RegisteredServiceProvider<Economy> registration : plugin.getServer().getServicesManager().getRegistrations(Economy.class)) {
+            plugin.getServer().getServicesManager().unregister(Economy.class, registration.getProvider());
+        }
 
         if (!configManager.getSettings().migrationEnabled) {
             plugin.getServer().getServicesManager().register(Economy.class, defaultCurrency, vaultPlugin, ServicePriority.High);
@@ -102,7 +107,8 @@ public class CurrenciesManager extends RedisEconomyAPI implements Listener {
                 try {
                     double bal = existentProvider.getProvider().getBalance(offlinePlayer);
                     balances.add(ScoredValue.just(bal, offlinePlayer.getUniqueId().toString()));
-                    nameUniqueIds.put(offlinePlayer.getName() == null ? offlinePlayer.getUniqueId() + "-Unknown" : offlinePlayer.getName(), offlinePlayer.getUniqueId().toString());
+                    if (offlinePlayer.getName() != null)
+                        nameUniqueIds.put(offlinePlayer.getName(), offlinePlayer.getUniqueId().toString());
                     defaultCurrency.updateAccountLocal(offlinePlayer.getUniqueId(), offlinePlayer.getName() == null ? offlinePlayer.getUniqueId().toString() : offlinePlayer.getName(), bal);
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -203,11 +209,15 @@ public class CurrenciesManager extends RedisEconomyAPI implements Listener {
     @Override
     public @Nullable String getUsernameFromUUIDCache(@NotNull UUID uuid) {
         if (uuid.equals(RedisKeys.getServerUUID())) return "Server";
-        for (Map.Entry<String, UUID> entry : nameUniqueIds.entrySet()) {
-            if (entry.getValue().equals(uuid))
-                return entry.getKey();
-        }
-        return null;
+        return nameUniqueIds.entrySet().stream()
+                .filter(e -> e.getValue().equals(uuid))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElseGet(() -> {
+                    if (plugin.settings().debug)
+                        Bukkit.getLogger().warning("Couldn't find username for UUID " + uuid + " in cache!");
+                    return null;
+                });
     }
 
     @Override
@@ -270,6 +280,7 @@ public class CurrenciesManager extends RedisEconomyAPI implements Listener {
                             result.forEach((uuid, uuidList) ->
                                     lockedAccounts.put(UUID.fromString(uuid),
                                             new ArrayList<>(Arrays.stream(uuidList.split(","))
+                                                    .filter(stringUUID -> stringUUID.length() >= 32)
                                                     .map(UUID::fromString).collect(Collectors.toList()))
                                     )
                             );
@@ -353,7 +364,7 @@ public class CurrenciesManager extends RedisEconomyAPI implements Listener {
      * @param target The uuid of the target
      * @return completable future true if the account is locked, false if it is unlocked
      */
-    public CompletableFuture<Boolean> toggleAccountLock(UUID uuid, UUID target) {
+    public CompletableFuture<Boolean> toggleAccountLock(@NotNull UUID uuid, UUID target) {
         final CompletableFuture<Boolean> future = new CompletableFuture<>();
         List<UUID> locked = lockedAccounts.getOrDefault(uuid, new ArrayList<>());
         boolean isLocked = locked.contains(target);
@@ -402,18 +413,22 @@ public class CurrenciesManager extends RedisEconomyAPI implements Listener {
             @Override
             public void message(String channel, String message) {
                 String[] args = message.split(",");
-                UUID account = UUID.fromString(args[0]);
-                if (args[1].equals("")) {
-                    lockedAccounts.remove(account);
-                    return;
-                }
-                List<UUID> newLockedAccounts = new ArrayList<>();
-                for (int i = 1; i < args.length; i++) {
-                    newLockedAccounts.add(UUID.fromString(args[i]));
-                }
-                lockedAccounts.put(account, newLockedAccounts);
-                if (configManager.getSettings().debug) {
-                    Bukkit.getLogger().info("Lockupdate Registered locked accounts for " + account);
+                try {
+                    UUID account = UUID.fromString(args[0]);
+                    if (args.length == 1 || args[1].isEmpty()) {
+                        lockedAccounts.remove(account);
+                        return;
+                    }
+                    List<UUID> newLockedAccounts = new ArrayList<>();
+                    for (int i = 1; i < args.length; i++) {
+                        newLockedAccounts.add(UUID.fromString(args[i]));
+                    }
+                    lockedAccounts.put(account, newLockedAccounts);
+                    if (configManager.getSettings().debug) {
+                        Bukkit.getLogger().info("Lockupdate Registered locked accounts for " + account);
+                    }
+                } catch (IllegalArgumentException e) {
+                    Bukkit.getLogger().warning("Lockupdate Received invalid uuid: " + args[0]);
                 }
             }
         });

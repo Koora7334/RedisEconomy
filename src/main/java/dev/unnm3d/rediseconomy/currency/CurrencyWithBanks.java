@@ -1,6 +1,7 @@
 package dev.unnm3d.rediseconomy.currency;
 
 import dev.unnm3d.rediseconomy.RedisEconomyPlugin;
+import dev.unnm3d.rediseconomy.config.struct.CurrencySettings;
 import dev.unnm3d.rediseconomy.transaction.AccountID;
 import dev.unnm3d.rediseconomy.transaction.Transaction;
 import io.lettuce.core.ScoredValue;
@@ -26,8 +27,8 @@ public class CurrencyWithBanks extends Currency {
      */
     private final ConcurrentHashMap<String, UUID> bankOwners;
 
-    public CurrencyWithBanks(CurrenciesManager currenciesManager, String currencyName, String currencySingular, String currencyPlural, String decimalFormat, String languageTag, double startingBalance, double transactionTax) {
-        super(currenciesManager, currencyName, currencySingular, currencyPlural, decimalFormat, languageTag, startingBalance, transactionTax);
+    public CurrencyWithBanks(CurrenciesManager currenciesManager, CurrencySettings currencySettings) {
+        super(currenciesManager, currencySettings);
         bankAccounts = new ConcurrentHashMap<>();
         bankOwners = new ConcurrentHashMap<>();
         getOrderedBankAccounts().thenApply(list -> {
@@ -256,7 +257,6 @@ public class CurrencyWithBanks extends Currency {
                 currenciesManager.getUsernameFromUUIDCache(transaction.accountIdentifier.getUUID()) : //Get the username from the cache (with server uuid translation)
                 transaction.accountIdentifier.toString(); //Else, it's a bank, so we get the bank id
         if (transaction.accountIdentifier.isPlayer()) {//Update player account
-            ownerName = ownerName == null ? transaction.accountIdentifier + "-Unknown" : ownerName;
             updateAccount(transaction.accountIdentifier.getUUID(), ownerName, getBalance(transaction.accountIdentifier.getUUID()) - transaction.amount);
         } else {//Update bank account
             updateBankAccount(transaction.accountIdentifier.toString(), bankBalance(transaction.accountIdentifier.toString()).balance - transaction.amount);
