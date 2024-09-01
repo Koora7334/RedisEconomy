@@ -567,7 +567,7 @@ public class Currency implements Economy {
                     });
                 } catch (Exception e) {
                     if (tries < 3) {
-                        Bukkit.getLogger().warning("Player accounts are desynchronized. try: " + tries);
+                        Bukkit.getLogger().warning(e.getMessage());
                         updateAccountCloudCache(uuid, playerName, balance, tries + 1);
                     } else {
                         Bukkit.getLogger().severe("Failed to update account " + playerName + " after 3 tries");
