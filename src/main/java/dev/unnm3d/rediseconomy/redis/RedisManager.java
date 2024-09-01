@@ -1,5 +1,6 @@
 package dev.unnm3d.rediseconomy.redis;
 
+import dev.unnm3d.rediseconomy.RedisEconomyPlugin;
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisFuture;
 import io.lettuce.core.TransactionResult;
@@ -25,9 +26,9 @@ public class RedisManager {
     private final List<StatefulRedisPubSubConnection<String, String>> pubSubConnections;
     protected RedisClient lettuceRedisClient;
 
-    public RedisManager(RedisClient lettuceRedisClient) {
+    public RedisManager(RedisClient lettuceRedisClient, int poolSize) {
         this.lettuceRedisClient = lettuceRedisClient;
-        this.roundRobinConnectionPool = new RoundRobinConnectionPool<>(lettuceRedisClient::connect, 5);
+        this.roundRobinConnectionPool = new RoundRobinConnectionPool<>(lettuceRedisClient::connect, poolSize);
         pubSubConnections = new CopyOnWriteArrayList<>();
     }
 
@@ -48,7 +49,8 @@ public class RedisManager {
     }
 
     public Optional<List<Object>> executeTransaction(Consumer<RedisCommands<String, String>> redisCommandsConsumer) {
-        final RedisCommands<String, String> syncCommands = roundRobinConnectionPool.get().sync();
+        StatefulRedisConnection<String, String> connection = roundRobinConnectionPool.get();
+        final RedisCommands<String, String> syncCommands = connection.sync();
         syncCommands.multi();
         redisCommandsConsumer.accept(syncCommands);
         final TransactionResult transactionResult = syncCommands.exec();
@@ -60,6 +62,11 @@ public class RedisManager {
         pubSubConnections.add(pubSubConnection);
         return pubSubConnection;
     }
+
+    public void printPool() {
+        RedisEconomyPlugin.getInstance().getLogger().warning(roundRobinConnectionPool.printPool());
+    }
+
 
     public void close() {
         pubSubConnections.forEach(StatefulRedisPubSubConnection::close);
