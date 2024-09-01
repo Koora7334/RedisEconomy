@@ -566,9 +566,14 @@ public class Currency implements Economy {
                         }
                     });
                 } catch (Exception e) {
-                    Bukkit.getLogger().severe("Failed to update account " + playerName + " general");
+                    if (tries < 3) {
+                        Bukkit.getLogger().warning("Player accounts are desynchronized. try: " + tries);
+                        updateAccountCloudCache(uuid, playerName, balance, tries + 1);
+                    } else {
+                        Bukkit.getLogger().severe("Failed to update account " + playerName + " after 3 tries");
+                        throw new RuntimeException("Player accounts are desynchronized");
+                    }
                     currenciesManager.getRedisManager().printPool();
-                    updateAccountCloudCache(uuid, playerName, balance, tries + 1);
                 }
             }).get(500L, TimeUnit.MILLISECONDS);
         } catch (InterruptedException | TimeoutException | ExecutionException e) {
